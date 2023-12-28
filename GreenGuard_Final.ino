@@ -84,8 +84,8 @@ void setup(){ // Einmalige Initialisierung
   WiFi.mode(WIFI_STA);
   delay(100);
   Serial.print ("\nWLAN connect to:");
-  Serial.print("Padthai_2.4G");
-  WiFi.begin("Padthai_2.4G","padthai2.4G");
+  Serial.print("wifi-name");
+  WiFi.begin("wifi-name","wifi-password");
   while (WiFi.status() != WL_CONNECTED) { // Warte bis Verbindung steht 
     delay(500); 
     Serial.print(".");
