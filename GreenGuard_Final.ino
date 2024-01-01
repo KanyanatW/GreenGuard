@@ -1,176 +1,192 @@
-#define BLYNK_TEMPLATE_ID "TMPL4I0CMO-KM"
-#define BLYNK_TEMPLATE_NAME "Green Guard"
-#define BLYNK_AUTH_TOKEN "YNcvkNthcS0zyzYgOc-1tktl-Ei4wh9G"
+//------------ Blynk-Projekt definieren
+#define BLYNK_TEMPLATE_ID "XXX"                     // Blynk Template ID
+#define BLYNK_TEMPLATE_NAME "XXX"                     // Blynk Template Name
+#define BLYNK_AUTH_TOKEN "XXX"   // Blynk API token
 
-/* Disclaimer IoT-Werkstatt CC 4.0 BY NC SA 
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. For Ardublock see the
- GNU General Public License for more details. */
-#include <ESP8266WiFi.h>
-#include <Blynk.h>
+//------------ notwendige Bibliotheken
+#include <ESP8266WiFi.h>       // Bibliothek für WIFI
+#include <Blynk.h>             // Bibliothek für Blynk
 #include <BlynkMultiClient.h>
-#include <Adafruit_BME680.h>
-#include <Wire.h>
-#include <Adafruit_NeoPixel.h>
-#include <rgb_lcd.h>
-#include "SI114X.h"         
+#include "Arduino.h"
+#include <Adafruit_BME680.h>   // Bibliothek für Temperatur und Luftfeuchte Sensoren
+#include <Wire.h>              // Bibliothek für Kommunikation mit I2C-Gerät
+#include <Adafruit_NeoPixel.h> // Bibliothek für NeoPixel
+#include <rgb_lcd.h>           // Bibliothek für LCD 
+#include "SI114X.h"            // Bibliothek für Sonnenlicht Sensor      
 
+//------------ Information zu WIFI hier eingeben
+String wifiSSID = "XXX";       // Wifi SSID
+String wifiPassword = "XXX";   // Wifi Passwort
 
-String matrixausgabe_text  = " "; // Ausgabetext als globale Variable
-
-volatile int matrixausgabe_index = 0;// aktuelle Position in Matrix
-
-IPAddress myOwnIP; // ownIP for mDNS 
-
+String matrixausgabe_text = " ";    // Ausgabetext als globale Variable
+volatile int matrixausgabe_index = 0; // aktuelle Position in Matrix
+IPAddress myOwnIP; // eigene IP für mDNS 
 static WiFiClient blynkWiFiClient;
-/* Comment this out to disable prints and save space */
 #define BLYNK_PRINT Serial
-double temp = 0 ;
-// BME680 Lib written by Limor Fried & Kevin Townsend for Adafruit Industries, http://www.adafruit.com/products/3660
-Adafruit_BME680 boschBME680; // Objekt Bosch Umweltsensor
-int boschBME680_ready = 0;
 
-double humid = 0 ;
-int light = 0;    // range 280-950 aber gut 400-700
-int soil = 0 ;    // range 0-950 aber gut 190-570
+//------------ Variablen zum Speichern der Messwerte von Sensoren
+double temp = 0;
+double humid = 0;
+int light = 0;
+int soil = 0;
 
-/* converted variables
-int lightPercent;
-int soilPercent;
-*/
+int soilPin = 0; // an dem Analog-Pin 0 ist der Erdefeuchte Sensor angeschlossen
 
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(2,13,NEO_GRBW + NEO_KHZ800);
-//LCD RGB, 2013 Copyright (c) Seeed Technology Inc.   Author:Loovee
-rgb_lcd lcd;
+//------------ Objekte erstellen
+Adafruit_BME680 boschBME680; // Objekt Bosch Umweltsensor 
+int boschBME680_ready = 0;   
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(2, 13, NEO_GRBW + NEO_KHZ800); // Objekt NeoPixel
+rgb_lcd lcd;             // Objekt LCD RGB 
+SI114X SI1145;           // Objekt SI1145 (Sonnenlicht) Sensor 
 
-SI114X SI1145 = SI114X(); // Create an instance of the SI1145 sensor
+//------------ Einmalige Initialisierung
+void setup() {
 
-void setup(){ // Einmalige Initialisierung
   Serial.begin(115200);
-  Wire.begin(); // ---- Initialisiere den I2C-Bus 
+  Wire.begin(); // I2C-Bus initialisieren
 
-  if (Wire.status() != I2C_OK) Serial.println("Something wrong with I2C");
+  if (Wire.status() != I2C_OK) Serial.println("Etwas stimmt nicht mit I2C");
 
+  // SI1145 Sensor initialisieren 
+  Serial.println("Beginne Si1145!");
+
+  while (!SI1145.Begin()) {
+    Serial.println("Si1145 ist nicht bereit!");
+    delay(1000);
+  }
+  Serial.println("Si1145 ist bereit!");
+
+  // Bosch BME 680 initialisieren
   boschBME680_ready = boschBME680.begin(118);
-
   if (boschBME680_ready == 0) {
-    while(1) { 
+    while (1) {
       Serial.println("BME680 nicht vorhanden - der alte Octopus nutzt BME280, ggf. Puzzleteile tauschen");
       delay(500);
     }
   }
 
-  // Set up Bosch BME 680
+  // Bosch BME 680 einrichten
   boschBME680.setTemperatureOversampling(BME680_OS_8X);
   boschBME680.setHumidityOversampling(BME680_OS_2X);
   boschBME680.setPressureOversampling(BME680_OS_4X);
   boschBME680.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  boschBME680.setGasHeater(0, 0); // off
+  boschBME680.setGasHeater(0, 0); // aus
 
-  pixels.begin();//-------------- Initialisierung Neopixel
+  // Neopixel initialisieren
+  pixels.begin();
   delay(1);
   pixels.show();
-  pixels.setPixelColor(0,0,0,0,0); // alle aus
-  pixels.setPixelColor(1,0,0,0,0);
-  pixels.show();                 // und anzeigen
+  pixels.setPixelColor(0, 0, 0, 0, 0); // linke LED aus
+  pixels.setPixelColor(1, 0, 0, 0, 0); // rechte LED aus
+  pixels.show(); // und anzeigen
 
-  lcd.begin(16, 2);// LCD Backlight initialisieren 
+  // LCD Backlight initialisieren
+  lcd.begin(16, 2); // Anzeigetyp einstellen, in diesem Fall 16 Spalten 2 Zeilen
 
+  // WLAN initialisieren 
   Serial.println();
-  //------------ WLAN initialisieren 
   WiFi.disconnect();
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   delay(100);
-  Serial.print ("\nWLAN connect to:");
-  Serial.print("wifi-name");
-  WiFi.begin("wifi-name","wifi-password");
+  Serial.print("\nWLAN verbinden mit:");
+  Serial.print(wifiSSID);
+  WiFi.begin(wifiSSID, wifiPassword);
   while (WiFi.status() != WL_CONNECTED) { // Warte bis Verbindung steht 
-    delay(500); 
+    delay(500);
     Serial.print(".");
   };
-  Serial.println ("\nconnected, meine IP:"+ WiFi.localIP().toString());
+  Serial.println("\nverbunden, meine IP:" + WiFi.localIP().toString());
   matrixausgabe_text = " Meine IP:" + WiFi.localIP().toString();
   myOwnIP = WiFi.localIP();
-  matrixausgabe_index=0;
+  matrixausgabe_index = 0;
 
   Blynk.addClient("WiFi", blynkWiFiClient, 80);
-  Blynk.config(BLYNK_AUTH_TOKEN); // Downloads, docs, tutorials: http://www.blynk.cc
+  Blynk.config(BLYNK_AUTH_TOKEN);
   int BlynkCon = 0;
   while (BlynkCon == 0) {
-    Serial.print ("\nBlynk connect ... ");
-    BlynkCon=Blynk.connect();
+    Serial.print("\nBlynk verbinden ... ");
+    BlynkCon = Blynk.connect();
     if (BlynkCon == 0) {
-      Serial.println("failed, try again");
+      Serial.println("Fehlgeschlagen, versuche es erneut");
       delay(1000);
     }
   }
-  Serial.println("connected");
+  Serial.println("verbunden");
 
 }
 
-void loop() { // Kontinuierliche Wiederholung 
-  Blynk.run();// Blynk Housekeeping
-  temp = (boschBME680.readTemperature()+(0.0)) ;
-  humid = (boschBME680.readHumidity()+(0.0)) ;
-  soil = analogRead(0) ;
-  light = SI1145.ReadVisible();
+// Kontinuierliche Wiederholung 
+void loop() {
 
-  /*map 
-  soilPercent = map(soil,0,950,0,100);
-  lightPercent = map(light,280,950,0,100);
-  */
-  
-  Blynk.virtualWrite(0,temp);// Wert an Blynk-Server übermitteln
-  Blynk.run();// Blynk Housekeeping
-  Blynk.virtualWrite(1,humid);// Wert an Blynk-Server übermitteln
-  Blynk.run();// Blynk Housekeeping
-  Blynk.virtualWrite(2,soil);// Wert an Blynk-Server übermitteln
-  Blynk.run();// Blynk Housekeeping
-  Blynk.virtualWrite(3,light);// Wert an Blynk-Server übermitteln
-  Blynk.run();// Blynk Housekeeping
+  Blynk.run(); // Blynk Housekeeping
 
-  lcd.setCursor(0,0);                                                  // Zeile 1, ab 0
-  lcd.print(String("T:"+String(temp)));       
-  lcd.setCursor(8,0);                                                   // Zeile 1, ab 8
-  lcd.print(String("H:"+String(humid)));
-  lcd.setCursor(0,1);                                                   // Zeile 2, ab 0
-  lcd.print(String("S:"+String(soil)));
-  lcd.setCursor(8,1);                                                   // Zeile 2, ab 8
-  lcd.print(String("V:"+String(light)));
+  // Werte von Sensoren lesen
+  temp = (boschBME680.readTemperature() + (0.0));
+  humid = (boschBME680.readHumidity() + (0.0));
+  soil = analogRead(soilPin);
+  light = (SI1145.ReadVisible());
 
-  // Print data to Serial Monitor
-  Serial.print("Temperature:"+String(temp));
+  // Werte an Blynk-Server übermitteln
+  Blynk.virtualWrite(0, temp);
+  Blynk.run(); // Blynk Housekeeping
+  Blynk.virtualWrite(1, humid);
+  Blynk.run(); // Blynk Housekeeping
+  Blynk.virtualWrite(2, soil);
+  Blynk.run(); // Blynk Housekeeping
+  Blynk.virtualWrite(3, light);
+  Blynk.run(); // Blynk Housekeeping
+
+  // Werte auf LCD anzeigen lassen(Nummerierung beginnt bei Null)
+  lcd.setCursor(0, 0); // Spalte 0, Zeile 0
+  lcd.print(String("T:" + String(temp)));
+  lcd.setCursor(8, 0); // Spalte 8, Zeile 0                                                 
+  lcd.print(String("H:" + String(humid)));
+  lcd.setCursor(0, 1); // Spalte 0, Zeile 1
+  lcd.print(String("S:" + String(soil)));
+  lcd.setCursor(8, 1); // Spalte 8, Zeile 1
+  lcd.print(String("L:" + String(light)));
+
+  // Werte auf Serieller Monitor ausgeben
+  Serial.print("Temperatur:" + String(temp));
   Serial.println();
-  Serial.print("Humidity:"+String(humid));
+  Serial.print("Luftfeuchtigkeit:" + String(humid));
   Serial.println();
-  Serial.print("Soil Moisture:"+String(soil));
+  Serial.print("Erdefeuchte:" + String(soil));
   Serial.println();
-  Serial.print("Visible Light:"+String(light));
+  Serial.print("Sichtbares Licht:" + String(light));
   Serial.println();
 
-  // wenn light/soil unter bzw. oberhalb diese Werte liegt, wird rot beleuchtet
-  if (( ( light ) < ( 400 ) ) || ( ( light ) > ( 700 ) ))   // nur dann wird beleuchtet
+  // Beginn der Abfrage
+  if (((light) < (400)) || ((light) > (700))) // Wenn Sonnenlicht-Wert < 400 oder > 700 ist,
   {
-    pixels.setPixelColor(0,40,0,0,0);       // right light
+    pixels.setPixelColor(0, 40, 0, 0, 0); // dann beleuchtet linke LED in Rot
     pixels.show();
     delay(500);
-    pixels.setPixelColor(0,0,0,0,0);        
+    pixels.setPixelColor(0, 0, 0, 0, 0);
     pixels.show();
     delay(500);
   }
-  
-  if (( ( soil ) < ( 190 ) ) || ( ( soil ) > ( 570 ) ))     // nur dann wird beleuchtet
-  {
+  else {
+    pixels.setPixelColor(0, 0, 40, 0, 0); // ansonsten bleibt linke LED in Grün
+    pixels.show();
+  }
 
-    pixels.setPixelColor(1,40,0,0,0);       // left light
+  if (((soil) < (190)) || ((soil) > (570))) // Wenn Erdefeuchte-Wert < 190 oder > 570 ist,
+  {
+    pixels.setPixelColor(1, 40, 0, 0, 0); // dann beleuchtet rechte LED in Rot
     pixels.show();
     delay(500);
-    pixels.setPixelColor(1,0,0,0,0);        
+    pixels.setPixelColor(1, 0, 0, 0, 0);
     pixels.show();
     delay(500);
   }
-  
-  delay( 1000 );
-} //end loop
+  else {
+    pixels.setPixelColor(1, 0, 40, 0, 0); // ansonsten bleibt linke LED in Grün
+    pixels.show();
+  }
+
+  // 1000 Millisekunden bis zur Wiederholung warten
+  delay(1000);
+
+} // end loop
